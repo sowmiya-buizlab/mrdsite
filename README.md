@@ -549,7 +549,7 @@ Iravathanallur National Highway 85, Madurai, Tamil Nadu 625009
 
 Bottom copyright line:
 
-© 2026 MRD Mahal. All rights reserved. | Where Every Auspicious Moment Begins ✨
+© 2026 MRD Mahal. All rights reserved. | Where Every Auspicious Moment Begins 
 
 Interaction and technical requirements
 
