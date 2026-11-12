@@ -7,6 +7,7 @@ import {
   Maximize2, MessageCircle, Phone, Power, Sparkles, Users, Utensils, Wind, X, Youtube, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { readLatestStories } from "@/data/blogPosts";
 
 /* ---------------------------------------------------------------------------
    STATIC ASSETS — found by file name, so it does not matter whether the file in
@@ -217,12 +218,12 @@ const testimonials = [
    The list page, the "View Blog" page and the "Related stories" all read from this array.
    Photos: src/assets/blog/blog-1 … blog-4 (optional — hall photos are used if a file is missing).
 --------------------------------------------------------------------------- */
-type BlogPost = {
+export type BlogPost = {
   slug: string; title: string; category: string; date: string; readTime: string; excerpt: string;
   image: string; alt: string; sections: { h: string; p: string[] }[];
 };
 const blogHeroImage = pickImage("blog", "blog-hero", heroBanner);
-const blogPosts: BlogPost[] = [
+export const blogPosts: BlogPost[] = [
   {
     slug: "how-to-choose-the-perfect-wedding-hall-in-madurai",
     title: "How to Choose the Perfect Wedding Hall in Madurai",
@@ -596,23 +597,23 @@ function BlogCta() {
   </div>
 }
 
-function BlogListView() {
-  const [featured,...rest]=blogPosts;
+function BlogListView({posts}:{posts:BlogPost[]}) {
+  const featured=blogPosts[0];
   return <main id="blog">
     <BlogHero eyebrow="MRD Mahal Journal" title="Our Blog" subtitle="Wedding ideas, Tamil traditions and planning tips from our grand marriage hall in Madurai."/>
     <section className="paper-texture bg-parchment py-14 md:py-20">
       <div className="section-shell">
-        <BlogCard post={featured} featured/>
-        <div className="mt-14 flex items-end justify-between gap-8"><h2 className="display-heading text-[clamp(2rem,4.5vw,3.6rem)] text-primary">Latest Stories</h2><div className="hidden h-px flex-1 bg-gold md:block"/></div>
-        <div className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">{rest.map(p=><BlogCard key={p.slug} post={p}/>)}</div>
+        {featured && <BlogCard post={featured} featured/>}
+        <div className="flex items-end justify-between gap-8"><h2 className="display-heading text-[clamp(2rem,4.5vw,3.6rem)] text-primary">Latest Stories</h2><div className="hidden h-px flex-1 bg-gold md:block"/></div>
+        {posts.length > 0 ? <div className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">{posts.map(p=><BlogCard key={p.slug} post={p}/>)}</div> : <p className="mt-8 rounded border border-primary/15 bg-background p-8 text-center text-muted-foreground">New stories are coming soon.</p>}
         <div className="mt-16"><BlogCta/></div>
       </div>
     </section>
   </main>
 }
 
-function BlogPostView({post}:{post:BlogPost}) {
-  const related=blogPosts.filter(p=>p.slug!==post.slug).slice(0,3);
+function BlogPostView({post,posts}:{post:BlogPost;posts:BlogPost[]}) {
+  const related=posts.filter(p=>p.slug!==post.slug).slice(0,3);
   return <main id="blog">
     <BlogHero eyebrow={post.category} title={post.title}>
       <p className="blog-meta"><span><CalendarDays className="size-4" aria-hidden="true"/>{post.date}</span><span aria-hidden="true">•</span><span>{post.readTime}</span><span aria-hidden="true">•</span><span>By MRD Mahal</span></p>
@@ -763,8 +764,11 @@ function Index() {
   const hash=useHash();
   const isBlog=hash==="blog"||hash.startsWith("blog/");
   const slug=hash.startsWith("blog/")?hash.slice(5):"";
-  const post=blogPosts.find(p=>p.slug===slug);
+  const [latestStories,setLatestStories]=useState(blogPosts.slice(1));
+  const stories=[blogPosts[0],...latestStories].filter((story):story is BlogPost=>Boolean(story));
+  const post=stories.find(p=>p.slug===slug);
   const first=useRef(true);
+  useEffect(()=>{readLatestStories(blogPosts.slice(1),blogPosts[0]?.slug??"").then(setLatestStories).catch(error=>console.error("Could not load saved Latest Stories",error))},[]);
   useEffect(()=>{
     if(first.current){first.current=false;if(!hash)return}
     if(isBlog||!hash||hash==="top"){window.scrollTo({top:0,behavior:"instant" as ScrollBehavior});return}
@@ -775,7 +779,7 @@ function Index() {
     document.title=isBlog?(post?`${post.title} | MRD Mahal Blog`:"Blog | MRD Mahal"):"MRD Mahal | Grand Wedding Venue";
   },[isBlog,post]);
   return <div id="top" className="overflow-x-hidden bg-background"><Header isBlog={isBlog}/>
-    {isBlog?(post?<BlogPostView post={post}/>:<BlogListView/>):<HomePage/>}
+    {isBlog?(post?<BlogPostView post={post} posts={stories}/>:<BlogListView posts={latestStories}/>):<HomePage/>}
     <Footer/>
   </div>;
 }
