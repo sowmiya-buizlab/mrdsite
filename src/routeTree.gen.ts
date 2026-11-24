@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as BlogRouteImport } from './routes/blog'
+import { Route as ApiMuhurthamYearRouteImport } from './routes/api/muhurtham.$year'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const BlogRoute = BlogRouteImport.update({
   path: '/blog',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMuhurthamYearRoute = ApiMuhurthamYearRouteImport.update({
+  id: '/api/muhurtham/$year',
+  path: '/api/muhurtham/$year',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/blog': typeof BlogRoute
+  '/api/muhurtham/$year': typeof ApiMuhurthamYearRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/blog': typeof BlogRoute
+  '/api/muhurtham/$year': typeof ApiMuhurthamYearRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/blog': typeof BlogRoute
+  '/api/muhurtham/$year': typeof ApiMuhurthamYearRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/blog'
+  fullPaths: '/' | '/admin' | '/blog' | '/api/muhurtham/$year'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/blog'
-  id: '__root__' | '/' | '/admin' | '/blog'
+  to: '/' | '/admin' | '/blog' | '/api/muhurtham/$year'
+  id: '__root__' | '/' | '/admin' | '/blog' | '/api/muhurtham/$year'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   BlogRoute: typeof BlogRoute
+  ApiMuhurthamYearRoute: typeof ApiMuhurthamYearRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/muhurtham/$year': {
+      id: '/api/muhurtham/$year'
+      path: '/api/muhurtham/$year'
+      fullPath: '/api/muhurtham/$year'
+      preLoaderRoute: typeof ApiMuhurthamYearRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   BlogRoute: BlogRoute,
+  ApiMuhurthamYearRoute: ApiMuhurthamYearRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

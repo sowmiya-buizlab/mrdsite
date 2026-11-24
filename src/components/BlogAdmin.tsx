@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { blogPosts, type BlogPost } from "@/routes/index";
+import { eventTypes, readBookings, tamilMonths, writeBookings, type VenueBooking } from "@/data/bookings";
 import {
   isAdminSignedIn,
   readLatestStories,
@@ -9,9 +10,47 @@ import {
   writeLatestStories,
 } from "@/data/blogPosts";
 
-type StoryDraft = { title: string; category: string; date: string; readTime: string; excerpt: string; alt: string; image: string };
-const emptyDraft: StoryDraft = { title: "", category: "Wedding Planning", date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }), readTime: "4 min read", excerpt: "", alt: "", image: "" };
+type StoryDraft = { title: string; category: string; date: string; readTime: string; excerpt: string; image: string };
+const storyCategories = [
+  "Wedding",
+  "Engagement",
+  "Wedding Reception",
+  "Pre-Wedding Celebrations",
+  "Post-Wedding Celebrations",
+  "Baby Shower & Seemantham",
+  "Naming Ceremony",
+  "Birthday Celebrations",
+  "Wedding Anniversary",
+  "Family Celebrations",
+  "Traditional & Religious Functions",
+  "Graduation & Convocation",
+  "School & College Events",
+  "Corporate Events",
+  "Business Meetings & Conferences",
+  "Retirement & Farewell Functions",
+  "Award & Felicitation Ceremonies",
+  "Family Reunions",
+  "Business Stalls",
+];
+const todayInputDate = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+};
+const dateForInput = (displayDate: string) => {
+  const match = displayDate.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (!match) return todayInputDate();
+  const parsed = new Date(`${match[2]} ${match[1]}, ${match[3]}`);
+  if (Number.isNaN(parsed.getTime())) return todayInputDate();
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+};
+const dateForDisplay = (inputDate: string) => {
+  const [year, month, day] = inputDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+};
+const emptyDraft: StoryDraft = { title: "", category: "Wedding", date: todayInputDate(), readTime: "4 min read", excerpt: "", image: "" };
 const fieldClass = "mt-1.5 w-full rounded border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary";
+type BookingDraft = Omit<VenueBooking, "id">;
+const blankBooking = (): BookingDraft => ({ date: todayInputDate(), tamilMonth: tamilMonths[0], function: eventTypes[0], customerName: "", location: "", status: "booked" });
 
 function slugify(value: string): string {
   return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -38,12 +77,16 @@ export default function BlogAdmin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bookings, setBookings] = useState<VenueBooking[]>([]);
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft>(blankBooking);
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     setSignedIn(isAdminSignedIn());
     readLatestStories(blogPosts.slice(1), blogPosts[0]?.slug ?? "")
       .then(setStories)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load stories."));
+    readBookings().then(setBookings).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load bookings."));
     setReady(true);
   }, []);
 
@@ -73,7 +116,7 @@ export default function BlogAdmin() {
 
   function startEdit(story: BlogPost) {
     setEditingSlug(story.slug);
-    setDraft({ title: story.title, category: story.category, date: story.date, readTime: story.readTime, excerpt: story.excerpt, alt: story.alt, image: story.image });
+    setDraft({ title: story.title, category: story.category, date: dateForInput(story.date), readTime: story.readTime, excerpt: story.excerpt, image: story.image });
     setSelectedImage(null);
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -81,7 +124,7 @@ export default function BlogAdmin() {
 
   function resetEditor() {
     setEditingSlug(null);
-    setDraft({ ...emptyDraft, date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) });
+    setDraft({ ...emptyDraft, date: todayInputDate() });
     setSelectedImage(null);
     setError("");
   }
@@ -97,7 +140,7 @@ export default function BlogAdmin() {
       const baseSlug = slugify(draft.title);
       if (!baseSlug) throw new Error("Enter a story title.");
       const slug = editingSlug ?? `${baseSlug}${stories.some((story) => story.slug === baseSlug) ? `-${Date.now().toString(36)}` : ""}`;
-      const nextStory: BlogPost = { slug, title: draft.title.trim(), category: draft.category.trim(), date: draft.date.trim(), readTime: draft.readTime.trim(), excerpt: draft.excerpt.trim(), image, alt: draft.alt.trim() || draft.title.trim(), sections: editingSlug ? (stories.find((story) => story.slug === editingSlug)?.sections ?? []) : [] };
+      const nextStory: BlogPost = { slug, title: draft.title.trim(), category: draft.category.trim(), date: dateForDisplay(draft.date), readTime: draft.readTime.trim(), excerpt: draft.excerpt.trim(), image, alt: draft.title.trim(), sections: editingSlug ? (stories.find((story) => story.slug === editingSlug)?.sections ?? []) : [] };
       const nextStories = editingSlug ? stories.map((story) => story.slug === editingSlug ? nextStory : story) : [nextStory, ...stories];
       await writeLatestStories(nextStories);
       setStories(nextStories);
@@ -131,6 +174,27 @@ export default function BlogAdmin() {
     setSignedIn(false);
   }
 
+  async function saveBooking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const booking: VenueBooking = { ...bookingDraft, id: editingBookingId ?? `booking-${Date.now()}` };
+    const next = editingBookingId ? bookings.map((item) => item.id === editingBookingId ? booking : item) : [...bookings, booking];
+    try { await writeBookings(next); setBookings(next); setBookingDraft(blankBooking()); setEditingBookingId(null); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save booking."); }
+  }
+
+  function editBooking(booking: VenueBooking) {
+    setEditingBookingId(booking.id);
+    setBookingDraft({ date: booking.date, tamilMonth: booking.tamilMonth, function: booking.function, customerName: booking.customerName, location: booking.location, status: booking.status });
+    document.getElementById("booking-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function deleteBooking(booking: VenueBooking) {
+    const next = bookings.filter((item) => item.id !== booking.id);
+    try { await writeBookings(next); setBookings(next); if (editingBookingId === booking.id) { setBookingDraft(blankBooking()); setEditingBookingId(null); } }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not delete booking."); }
+  }
+
   if (!ready) return <main className="min-h-screen bg-background" />;
 
   return <main className="min-h-screen bg-[#f7f3eb] px-4 py-8 text-foreground sm:px-8">
@@ -154,12 +218,14 @@ export default function BlogAdmin() {
           <h2 className="display-heading text-2xl text-primary">{editingSlug ? "Edit story" : "Add a story"}</h2>
           <form className="mt-5 space-y-4" onSubmit={saveStory}>
             <label className="block text-sm font-medium">Title<input required maxLength={120} value={draft.title} onChange={(event) => updateDraft("title", event.target.value)} className={fieldClass}/></label>
-            <label className="block text-sm font-medium">Category<input required maxLength={50} value={draft.category} onChange={(event) => updateDraft("category", event.target.value)} className={fieldClass}/></label>
-            <div className="grid grid-cols-2 gap-3"><label className="block text-sm font-medium">Display date<input required value={draft.date} onChange={(event) => updateDraft("date", event.target.value)} className={fieldClass}/></label><label className="block text-sm font-medium">Read time<input required value={draft.readTime} onChange={(event) => updateDraft("readTime", event.target.value)} className={fieldClass}/></label></div>
+            <label className="block text-sm font-medium">Category<select required value={draft.category} onChange={(event) => updateDraft("category", event.target.value)} className={fieldClass}>
+              {!storyCategories.includes(draft.category) && <option value={draft.category}>{draft.category}</option>}
+              {storyCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select></label>
+            <div className="grid grid-cols-2 gap-3"><label className="block text-sm font-medium">Display date<input required type="date" value={draft.date} onChange={(event) => updateDraft("date", event.target.value)} className={fieldClass}/></label><label className="block text-sm font-medium">Read time<input required value={draft.readTime} onChange={(event) => updateDraft("readTime", event.target.value)} className={fieldClass}/></label></div>
             <label className="block text-sm font-medium">Description<textarea required rows={5} maxLength={600} value={draft.excerpt} onChange={(event) => updateDraft("excerpt", event.target.value)} className={fieldClass}/><span className="mt-1 block text-right text-xs text-muted-foreground">{draft.excerpt.length}/600</span></label>
             <label className="block text-sm font-medium">Story image<input type="file" accept="image/*" onChange={(event) => setSelectedImage(event.target.files?.[0] ?? null)} className="mt-2 block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-primary"/><span className="mt-1 block text-xs text-muted-foreground">JPG, PNG or WebP · up to 5 MB {editingSlug && "· leave empty to keep current image"}</span></label>
             {(selectedImagePreview || draft.image) && <img src={selectedImagePreview || draft.image} alt="Story preview" className="aspect-[16/9] w-full rounded object-cover"/>}
-            <label className="block text-sm font-medium">Image description for accessibility<input value={draft.alt} onChange={(event) => updateDraft("alt", event.target.value)} className={fieldClass}/></label>
             {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
             <div className="flex gap-3"><button disabled={saving} className="flex-1 rounded bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Saving…" : editingSlug ? "Save changes" : "Add story"}</button>{editingSlug && <button type="button" onClick={resetEditor} className="rounded border border-primary/25 px-4 py-3 text-sm text-primary">Cancel</button>}</div>
           </form>
@@ -173,6 +239,26 @@ export default function BlogAdmin() {
           </article>)}{stories.length === 0 && <p className="rounded bg-primary/5 px-4 py-8 text-center text-sm text-muted-foreground">No stories yet. Add one using the form.</p>}</div>
         </section>
       </div>}
+      {signedIn && <section className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(300px,380px)_1fr]">
+        <section id="booking-editor" className="scroll-mt-6 rounded-lg border border-primary/10 bg-white p-5 shadow-sm">
+          <h2 className="display-heading text-2xl text-primary">{editingBookingId ? "Edit booking" : "Add booking"}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Bookings appear red on the public calendar. Cancelled dates return to green.</p>
+          <form className="mt-5 space-y-3" onSubmit={saveBooking}>
+            <label className="block text-sm font-medium">Date<input required type="date" value={bookingDraft.date} onChange={(e) => setBookingDraft({ ...bookingDraft, date: e.target.value })} className={fieldClass}/></label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">Tamil month<select required value={bookingDraft.tamilMonth} onChange={(e) => setBookingDraft({ ...bookingDraft, tamilMonth: e.target.value })} className={fieldClass}>{tamilMonths.map((tamilMonth) => <option key={tamilMonth} value={tamilMonth}>{tamilMonth}</option>)}</select></label><label className="block text-sm font-medium">Status<select value={bookingDraft.status} onChange={(e) => setBookingDraft({ ...bookingDraft, status: e.target.value as VenueBooking["status"] })} className={fieldClass}><option value="booked">Booked</option><option value="cancelled">Cancelled</option></select></label></div>
+            <label className="block text-sm font-medium">Function<select required value={bookingDraft.function} onChange={(e) => setBookingDraft({ ...bookingDraft, function: e.target.value as VenueBooking["function"] })} className={fieldClass}>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{eventType}</option>)}</select></label>
+            <label className="block text-sm font-medium">Booked under name<input required value={bookingDraft.customerName} onChange={(e) => setBookingDraft({ ...bookingDraft, customerName: e.target.value })} className={fieldClass}/></label>
+            <label className="block text-sm font-medium">Location<input required value={bookingDraft.location} onChange={(e) => setBookingDraft({ ...bookingDraft, location: e.target.value })} className={fieldClass}/></label>
+            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+            <div className="flex gap-3"><button className="flex-1 rounded bg-primary px-4 py-3 text-sm font-semibold text-white">{editingBookingId ? "Save booking" : "Add booking"}</button>{editingBookingId && <button type="button" onClick={() => { setBookingDraft(blankBooking()); setEditingBookingId(null); }} className="rounded border border-primary/25 px-4 py-3 text-sm text-primary">Cancel</button>}</div>
+          </form>
+        </section>
+        <section className="rounded-lg border border-primary/10 bg-white p-5 shadow-sm">
+          <h2 className="display-heading text-2xl text-primary">Venue bookings <span className="font-sans text-sm">({bookings.length})</span></h2>
+          <p className="mb-4 mt-1 text-sm text-muted-foreground">English month is shown from the date; Tamil month, function, customer and location are editable.</p>
+          <div className="space-y-2">{[...bookings].sort((a,b) => a.date.localeCompare(b.date)).map((booking) => <article key={booking.id} className="flex flex-wrap items-center gap-3 rounded border border-primary/10 p-3"><span className={`size-3 rounded-full ${booking.status === "booked" ? "bg-red-600" : "bg-green-600"}`} aria-label={booking.status}/><div className="min-w-0 flex-1"><p className="font-semibold text-primary">{new Date(`${booking.date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} · {booking.tamilMonth}</p><p className="text-sm">{booking.function} · {booking.customerName} · {booking.location}</p><p className={`text-xs font-semibold uppercase ${booking.status === "booked" ? "text-red-700" : "text-green-700"}`}>{booking.status}</p></div><button type="button" onClick={() => editBooking(booking)} className="text-sm font-semibold text-primary underline">Edit</button><button type="button" onClick={() => void deleteBooking(booking)} className="text-sm font-semibold text-red-700 underline">Delete</button></article>)}{bookings.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No bookings. Add a date using the form.</p>}</div>
+        </section>
+      </section>}
       <p className="mx-auto mt-8 max-w-3xl text-center text-xs leading-5 text-muted-foreground">Storage note: stories and login are saved in this browser only. They will not sync to other devices or browsers.</p>
     </div>
   </main>;

@@ -1,7 +1,7 @@
 import type { BlogPost } from "@/routes/index";
 
 const DB_NAME = "mrd-mahal-blog";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORIES_STORE = "stories";
 const LATEST_STORIES_KEY = "latest";
 const LEGACY_STORIES_KEY = "published";
@@ -17,6 +17,9 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORIES_STORE)) {
         request.result.createObjectStore(STORIES_STORE);
+      }
+      if (!request.result.objectStoreNames.contains("bookings")) {
+        request.result.createObjectStore("bookings");
       }
     };
     request.onsuccess = () => resolve(request.result);

@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "../lib/seo";
 
 function NotFoundComponent() {
   return (
@@ -77,16 +78,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "MRD Mahal" },
-      { name: "description", content: "Your Dream Moments in Our Grand venues" },
-      { name: "author", content: "MRD Mahal" },
-      { property: "og:title", content: "MRD Mahal" },
-      { property: "og:description", content: "Your Dream Moments in Our Grand venues" },
+      { title: SITE_NAME },
+      { name: "description", content: SITE_DESCRIPTION },
+      { name: "author", content: SITE_NAME },
+      { name: "robots", content: "index,follow" },
+      { property: "og:title", content: SITE_NAME },
+      { property: "og:description", content: SITE_DESCRIPTION },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
         href: appCss,
@@ -123,6 +126,19 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "EventVenue",
+            name: SITE_NAME,
+            description: SITE_DESCRIPTION,
+            ...(SITE_URL ? { url: SITE_URL } : {}),
+            areaServed: { "@type": "City", name: "Madurai" },
+          }),
+        }}
+      />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <main><Outlet /></main>
     </QueryClientProvider>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import axios from "axios";
+import { canonicalUrl, SITE_NAME } from "@/lib/seo";
 
 type WordPressPost = {
   id: number;
@@ -70,6 +71,20 @@ const Blog = () => {
   );
 };
 
-export const Route = createFileRoute("/blog")({ component: Blog });
+export const Route = createFileRoute("/blog")({
+  head: () => ({
+    links: canonicalUrl("/blog") ? [{ rel: "canonical", href: canonicalUrl("/blog")! }] : [],
+    meta: [
+      { title: `Blog | ${SITE_NAME}` },
+      { name: "description", content: `Stories and updates from ${SITE_NAME}.` },
+      { name: "robots", content: "index,follow" },
+      { property: "og:title", content: `Blog | ${SITE_NAME}` },
+      { property: "og:description", content: `Stories and updates from ${SITE_NAME}.` },
+      { property: "og:type", content: "website" },
+      ...(canonicalUrl("/blog") ? [{ property: "og:url", content: canonicalUrl("/blog")! }] : []),
+    ],
+  }),
+  component: Blog,
+});
 
 export default Blog;

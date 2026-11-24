@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { readLatestStories } from "@/data/blogPosts";
+import { readBookings, type VenueBooking } from "@/data/bookings";
+import { canonicalUrl, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
 /* ---------------------------------------------------------------------------
    STATIC ASSETS — found by file name, so it does not matter whether the file in
@@ -130,20 +132,28 @@ const pickImage = (folder: "event-types" | "venue" | "blog", name: string, fallb
 };
 
 export const Route = createFileRoute("/")({
-  head: () => ({ meta: [
+  head: () => ({
+    links: canonicalUrl("/") ? [{ rel: "canonical", href: canonicalUrl("/")! }] : [],
+    meta: [
     { title: "MRD Mahal | Grand Wedding Venue" },
-    { name: "description", content: "MRD Mahal — Your Dream Moments in Our Grand venues." },
+    { name: "description", content: SITE_DESCRIPTION },
+    { name: "robots", content: "index,follow" },
     { property: "og:title", content: "MRD Mahal | Grand Wedding Venue" },
-    { property: "og:description", content: "MRD Mahal — Your Dream Moments in Our Grand venues." },
+    { property: "og:description", content: SITE_DESCRIPTION },
     { property: "og:type", content: "website" },
+    ...(heroBanner && SITE_URL ? [{ property: "og:image", content: new URL(heroBanner, `${SITE_URL}/`).toString() }] : []),
+    ...(canonicalUrl("/") ? [{ property: "og:url", content: canonicalUrl("/")! }] : []),
+    { property: "og:site_name", content: SITE_NAME },
     { name: "twitter:card", content: "summary_large_image" },
   ]}),
   component: Index,
 });
 
 /* NAV — [label shown in the bar, id of the section it scrolls to]. "Legacy" opens the Our Legacy section (id "about"). */
-const nav = [["Legacy","about"],["Mini Hall","mini-hall"],["Max Hall","max-hall"],["Book Venue","quick-enquiry"],["Gallery","gallery"],["Blog","blog"]] as const;
+const nav = [["Legacy","about"],["Mini Hall","mini-hall"],["Max Hall","max-hall"],["Calendar","calendar"],["Book Venue","quick-enquiry"],["Gallery","gallery"],["Blog","blog"]] as const;
 const eventTypes = ["Weddings & Receptions","Engagements & Muhurtham Functions","Birthday Parties","Seemantham & Baby Showers","Corporate & Cultural Events","Family Gatherings","Stall showcasing"];
+// Static opening cover for the Event Types photo book; event photos turn separately after it opens.
+const eventBookCover = pickImage("event-types", "mrd-mahal-opening");
 // Event Types photos (same order as `eventTypes`) — files live in src/assets/event-types/
 // wedding / birthday / corporate have NO fallback on purpose: a missing file shows a placeholder instead of a wrong photo
 const eventImages = [
@@ -388,36 +398,51 @@ function SpreadPhoto({src,alt,side,pos}:{src?:string;alt:string;side:"left"|"rig
    AUTO FLIP: while the book is on screen it turns to the next page every AUTO_FLIP_MS (3 seconds) and goes back to the first page after the last one.
    The timer restarts after every page change (also manual ones) and waits while a finger / mouse button is pressed on the book. */
 const AUTO_FLIP_MS = 3000;   // change this number (milliseconds) to make the book flip faster / slower
-function PhotoBook({items,label}:{items:readonly (readonly [string,string,string])[];label:string}) {
+function PhotoBook({items,label,cover}:{items:readonly (readonly [string,string,string])[];label:string;cover:string}) {
   const total=items.length;
   const [turn,setTurn]=useState({index:0,from:0}); const {index,from}=turn;
+  const [coverVisible,setCoverVisible]=useState(true);
+  const isOpeningCover=coverVisible;
   const drag=useRef<number|null>(null);
+  const suppressClick=useRef(false);
   const ref=useRef<HTMLDivElement>(null); const [visible,setVisible]=useState(false); const [inView,setInView]=useState(false); const [paused,setPaused]=useState(false);
   useEffect(()=>{const el=ref.current;if(!el)return;const observer=new IntersectionObserver(entries=>{const hit=entries.some(e=>e.isIntersecting);setInView(hit);if(hit)setVisible(true)},{threshold:0.15});observer.observe(el);return()=>observer.disconnect()},[]);
   const go=(n:number)=>setTurn(t=>{const next=Math.max(0,Math.min(total-1,n));return next===t.index?t:{index:next,from:t.index}});
-  // automatic page turn: every 3 seconds while the book is on screen (last page -> back to the first page)
+  const returnToCover=()=>{setTurn({index:0,from:0});setCoverVisible(true)};
+  // The cover opens directly to Weddings; event spreads turn one by one, then return straight to the cover.
   useEffect(()=>{
     if(!inView||paused||total<2)return;
     if(typeof window!=="undefined"&&window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
-    const timer=window.setTimeout(()=>go(index>=total-1?0:index+1),AUTO_FLIP_MS);
+    const timer=window.setTimeout(()=>{
+      if(coverVisible){setCoverVisible(false);setTurn({index:0,from:0});return}
+      if(index>=total-1){returnToCover();return}
+      go(index+1);
+    },AUTO_FLIP_MS);
     return()=>window.clearTimeout(timer);
-  },[inView,paused,index,total]);
+  },[inView,paused,index,total,coverVisible]);
   // when jumping several spreads (dots), the pages in between turn one after another
   const lo=Math.min(from,index); const hi=Math.max(from,index); const goingNext=index>=from;
   return <div
     ref={ref}
-    className={`photo-book ${visible?"is-visible":""}`}
+    className={`photo-book ${visible?"is-visible":""}${isOpeningCover?" is-opening":""}`}
     role="region"
     aria-roledescription="carousel"
     aria-label={label}
     tabIndex={0}
-    onKeyDown={e=>{if(e.key==="ArrowRight"){e.preventDefault();go(index+1)}else if(e.key==="ArrowLeft"){e.preventDefault();go(index-1)}}}
-    onPointerDown={e=>{drag.current=e.clientX;setPaused(true)}}
-    onPointerUp={e=>{const start=drag.current;drag.current=null;setPaused(false);if(start===null)return;const dx=e.clientX-start;if(Math.abs(dx)>50)go(index+(dx<0?1:-1))}}
+    onKeyDown={e=>{if(e.key==="ArrowRight"){e.preventDefault();if(isOpeningCover){setTurn({index:0,from:0});setCoverVisible(false)}else if(index>=total-1)returnToCover();else go(index+1)}else if(e.key==="ArrowLeft"){e.preventDefault();if(!isOpeningCover){if(index===0)returnToCover();else go(index-1)}}}}
+    onPointerDown={e=>{drag.current=e.clientX;suppressClick.current=false;setPaused(true);e.currentTarget.setPointerCapture(e.pointerId)}}
+    onPointerUp={e=>{
+      const start=drag.current;drag.current=null;setPaused(false);if(start===null)return;
+      const dx=e.clientX-start;if(Math.abs(dx)<=50)return;
+      suppressClick.current=true;window.setTimeout(()=>{suppressClick.current=false},500);
+      if(isOpeningCover){if(dx<0){setTurn({index:0,from:0});setCoverVisible(false)}return}
+      if(dx<0){if(index>=total-1)returnToCover();else go(index+1)}
+      else if(index===0)returnToCover();else go(index-1);
+    }}
     onPointerCancel={()=>{drag.current=null;setPaused(false)}}
     onPointerLeave={()=>{drag.current=null;setPaused(false)}}
   >
-    <div className={`photo-book-stage ${bookBg?"has-bg":"no-bg"}`}>
+    <div className={`photo-book-stage ${bookBg?"has-bg":"no-bg"}${isOpeningCover?" is-opening":""}`}>
       {bookBg&&<img className="pb-stage-bg" src={bookBg} alt="" aria-hidden="true" width={1536} height={783} loading="lazy" decoding="async" draggable={false}/>}
       {/* book cover under the pages + ribbon bookmark with heart charm hanging below the book (mobile, or desktop when the cover picture is missing) */}
       <div className="pb-cover-base" aria-hidden="true"/>
@@ -456,6 +481,7 @@ function PhotoBook({items,label}:{items:readonly (readonly [string,string,string
                 </div>
               </div>:<div className="pb-cover"><span>{label}</span></div>}
               <span className="pb-dim" aria-hidden="true"/>
+              {p===1&&front&&<button type="button" className="pb-hit" aria-label={index>=total-1?"Return to MRD Mahal cover":`Turn to ${items[index+1][1].trim()}`} onClick={()=>index>=total-1?returnToCover():go(index+1)}/>}
               {p>=2&&front&&<button type="button" tabIndex={-1} className="pb-hit" aria-label={`Open ${front[1].trim()}`} onClick={()=>go(k-1)}/>}
             </div>
             {/* BACK — photo page (on mobile: upper half of the photo) */}
@@ -468,13 +494,20 @@ function PhotoBook({items,label}:{items:readonly (readonly [string,string,string
           </div>
         })}
       </div>
+      <div className={`pb-opening-cover${isOpeningCover?" is-active":""}`} aria-hidden={!isOpeningCover}>
+        <img src={cover} alt="" draggable={false} fetchPriority="high" decoding="async"/>
+        <button type="button" className="pb-opening-hit" tabIndex={isOpeningCover?0:-1} aria-label={`Open ${items[0][1].trim()}`} onClick={()=>{if(suppressClick.current){suppressClick.current=false;return}setTurn({index:0,from:0});setCoverVisible(false)}}/>
+      </div>
     </div>
     <div className="photo-book-controls">
-      <Button type="button" variant="outline" size="icon" className="size-11 rounded-full" aria-label="Previous page" disabled={index===0} onClick={()=>go(index-1)}><ChevronLeft aria-hidden="true"/></Button>
-      <div className="flex items-center gap-1" aria-label="Select page">{items.map(([,title],i)=><Button key={title} type="button" variant="ghost" size="icon" className="size-8 rounded-full p-0" aria-label={`Show ${title.trim()}`} aria-current={index===i?"true":undefined} onClick={()=>go(i)}><span aria-hidden="true" className={`size-2.5 rounded-full border border-primary ${index===i?"bg-primary":"bg-transparent"}`}/></Button>)}</div>
-      <Button type="button" variant="outline" size="icon" className="size-11 rounded-full" aria-label="Next page" disabled={index===total-1} onClick={()=>go(index+1)}><ChevronRight aria-hidden="true"/></Button>
+      <Button type="button" variant="outline" size="icon" className="size-11 rounded-full" aria-label="Previous page" disabled={isOpeningCover} onClick={()=>index===0?returnToCover():go(index-1)}><ChevronLeft aria-hidden="true"/></Button>
+      <div className="flex items-center gap-1" aria-label="Select page">
+        <Button type="button" variant="ghost" size="icon" className="size-8 rounded-full p-0" aria-label="Show MRD Mahal cover" aria-current={isOpeningCover?"true":undefined} onClick={returnToCover}><span aria-hidden="true" className={`size-2.5 rounded-full border border-primary ${isOpeningCover?"bg-primary":"bg-transparent"}`}/></Button>
+        {items.map(([,title],i)=><Button key={title} type="button" variant="ghost" size="icon" className="size-8 rounded-full p-0" aria-label={`Show ${title.trim()}`} aria-current={!isOpeningCover&&index===i?"true":undefined} onClick={()=>{setTurn(t=>({index:i,from:t.index}));setCoverVisible(false)}}><span aria-hidden="true" className={`size-2.5 rounded-full border border-primary ${!isOpeningCover&&index===i?"bg-primary":"bg-transparent"}`}/></Button>)}
+      </div>
+      <Button type="button" variant="outline" size="icon" className="size-11 rounded-full" aria-label="Next page" onClick={()=>isOpeningCover?(setTurn({index:0,from:0}),setCoverVisible(false)):index===total-1?returnToCover():go(index+1)}><ChevronRight aria-hidden="true"/></Button>
     </div>
-    <p className="sr-only" aria-live="polite">Page {index+1} of {total}: {items[index][1].trim()}</p>
+    <p className="sr-only" aria-live="polite">{isOpeningCover?"MRD Mahal cover":`Page ${index+1} of ${total}: ${items[index][1].trim()}`}</p>
   </div>
 }
 
@@ -573,6 +606,29 @@ function BlogHero({eyebrow,title,subtitle,children}:{eyebrow:string;title:string
 
 function BlogCard({post,featured=false}:{post:BlogPost;featured?:boolean}) {
   const href=`#blog/${post.slug}`;
+  const [shareNotice,setShareNotice]=useState("");
+  const shareUrl=()=>`${window.location.origin}${window.location.pathname}${href}`;
+  const copyStoryLink=async()=>{
+    const url=shareUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const input=document.createElement("textarea");
+      input.value=url;
+      input.style.position="fixed";
+      input.style.opacity="0";
+      document.body.append(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    setShareNotice("Link copied");
+    window.setTimeout(()=>setShareNotice(""),2500);
+  };
+  const openInstagram=()=>{
+    window.open("https://www.instagram.com/","_blank","noopener,noreferrer");
+    void copyStoryLink();
+  };
   return <article className={`blog-card${featured?" blog-card-featured":""}`}>
     <a href={href} className="blog-card-media" tabIndex={-1} aria-hidden="true">
       <BlogImage src={post.image} alt={post.alt}/>
@@ -582,8 +638,12 @@ function BlogCard({post,featured=false}:{post:BlogPost;featured?:boolean}) {
       <p className="blog-card-meta"><CalendarDays className="size-3.5" aria-hidden="true"/>{post.date}<span aria-hidden="true">•</span>{post.readTime}</p>
       <h3 className="blog-card-title"><a href={href}>{post.title}</a></h3>
       <p className="blog-card-excerpt">{post.excerpt}</p>
-      <div className="mt-auto pt-3">
-        <Button asChild className="h-11 rounded-md bg-wine px-5 text-primary-foreground transition-colors hover:bg-primary focus-visible:ring-2 focus-visible:ring-gold"><a href={href} aria-label={`View blog: ${post.title}`}>View Blog<ChevronRight className="size-4" aria-hidden="true"/></a></Button>
+      <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">
+        <Button asChild className="mr-4 h-11 rounded-md bg-wine px-5 text-primary-foreground transition-colors hover:bg-primary focus-visible:ring-2 focus-visible:ring-gold"><a href={href} aria-label={`View blog: ${post.title}`}>View Blog<ChevronRight className="size-4" aria-hidden="true"/></a></Button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(`${post.title} ${shareUrl()}`)}`} target="_blank" rel="noopener noreferrer" aria-label={`Share ${post.title} on WhatsApp`} title="Share on WhatsApp" className="inline-flex size-10 items-center justify-center rounded-md border border-primary/20 text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"><WhatsAppMark/></a>
+        <button type="button" onClick={openInstagram} aria-label={`Open Instagram and copy ${post.title} link`} title="Open Instagram (link copied)" className="inline-flex size-10 items-center justify-center rounded-md border border-primary/20 text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"><Instagram className="size-4" aria-hidden="true"/></button>
+        <button type="button" onClick={copyStoryLink} aria-label={`Copy link to ${post.title}`} title="Copy link" className="inline-flex size-10 items-center justify-center rounded-md border border-primary/20 text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"><span aria-hidden="true">⧉</span></button>
+        {shareNotice&&<span role="status" className="text-xs text-muted-foreground">{shareNotice}</span>}
       </div>
     </div>
   </article>
@@ -649,8 +709,153 @@ function Footer() {
 
 /* HOME PAGE — all the original sections (Header and Footer are added by <Index/>)
    Every section's content sits inside  className="section-shell"  (see styles.css) so the LEFT edge is identical everywhere. */
+type CalendarApiValue = string | number | null | CalendarApiValue[] | { [key: string]: CalendarApiValue };
+const calendarRecord = (value: CalendarApiValue | undefined): Record<string, CalendarApiValue> | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, CalendarApiValue> : undefined;
+function calendarClock(value: CalendarApiValue): string {
+  if (typeof value !== "string") return String(value);
+  const match = value.match(/(?:T|^)(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if (!match) return value;
+  const hour24 = Number(match[1]);
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${String(hour12).padStart(2, "0")}:${match[2]} ${suffix}`;
+}
+function findCalendarValue(value: CalendarApiValue | undefined, names: string[]): CalendarApiValue | undefined {
+  const record = calendarRecord(value);
+  if (!record) return undefined;
+  for (const [key, child] of Object.entries(record)) if (names.includes(key.toLowerCase().replace(/[^a-z]/g, ""))) return child;
+  for (const child of Object.values(record)) { const found = findCalendarValue(child, names); if (found !== undefined) return found; }
+  return undefined;
+}
+function calendarText(value: CalendarApiValue | undefined): string[] {
+  if (typeof value === "string" || typeof value === "number") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(calendarText);
+  const record = calendarRecord(value);
+  if (!record) return [];
+  const start = record.start ?? record.from;
+  const end = record.end ?? record.to;
+  if (start && end) return [`${calendarClock(start)} – ${calendarClock(end)}`];
+  const name = calendarRecord(record.name);
+  if (name) return [String(name.ta ?? name.en ?? Object.values(name)[0] ?? "")].filter(Boolean);
+  if (typeof record.name === "string" || typeof record.name === "number") return [String(record.name)];
+  const text = record.text ?? record.label ?? record.title;
+  if (typeof text === "string") return [text];
+  return Object.values(record).flatMap(calendarText);
+}
+
+function AvailabilityCalendar() {
+  const [month, setMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
+  const [selectedDate, setSelectedDate] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); });
+  const calendarStatusRef = useRef<HTMLDivElement>(null);
+  const bookingDetailRef = useRef<HTMLDivElement>(null);
+  const [muhurthamDates, setMuhurthamDates] = useState<Record<string, true>>({});
+  const [muhurthamDataMonth, setMuhurthamDataMonth] = useState<string | null>(null);
+  const [muhurthamStatus, setMuhurthamStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [bookings, setBookings] = useState<VenueBooking[]>([]);
+  const calendarYear = month.getFullYear();
+  const calendarMonth = month.getMonth() + 1;
+  const calendarMonthKey = `${calendarYear}-${String(calendarMonth).padStart(2, "0")}`;
+  const [hall, setHall] = useState<"Mini Hall" | "Max Hall">("Mini Hall");
+  const [panchang, setPanchang] = useState<CalendarApiValue | null>(null);
+  const [panchangLoading, setPanchangLoading] = useState(false);
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((firstDay + daysInMonth) / 7) * 7 }, (_, index) => {
+    const day = index - firstDay + 1;
+    return day > 0 && day <= daysInMonth ? new Date(month.getFullYear(), month.getMonth(), day) : null;
+  });
+  const selectedInputDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`;
+  const selectedLabel = selectedDate.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const selectedMuhurtham = muhurthamDataMonth === calendarMonthKey && muhurthamDates[selectedInputDate];
+  const selectedBooking = bookings.find((booking) => booking.date === selectedInputDate && booking.status === "booked");
+  const isBooked = Boolean(selectedBooking);
+  const selectedStatus = isBooked ? "Booked" : selectedMuhurtham ? "Muhurtham" : "Available";
+  const statusBarClass = isBooked ? "bg-red-700 text-white" : selectedMuhurtham ? "bg-amber-400 text-primary" : "bg-green-600 text-white";
+  const upcomingMuhurtham = muhurthamDataMonth === calendarMonthKey ? Object.keys(muhurthamDates).filter((date) => date.startsWith(`${calendarMonthKey}-`) && date >= selectedInputDate).sort() : [];
+  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void readBookings().then((records) => { if (active) setBookings(records); }).catch(() => { if (active) setBookings([]); }); };
+    refresh();
+    window.addEventListener("mrd-bookings-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("mrd-bookings-updated", refresh); window.removeEventListener("focus", refresh); };
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    setMuhurthamStatus("loading");
+    setMuhurthamDataMonth(null);
+    fetch(`/api/muhurtham/${calendarYear}?month=${calendarMonth}`, { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error("Muhurtham dates are unavailable"); return response.json() as Promise<{ dates: string[] }>; })
+      .then(({ dates }) => {
+        setMuhurthamDates(Object.fromEntries(dates.map((date) => [date, true] as const)));
+        setMuhurthamDataMonth(calendarMonthKey);
+        setMuhurthamStatus("ready");
+      })
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setMuhurthamDates({}); setMuhurthamDataMonth(calendarMonthKey); setMuhurthamStatus("unavailable"); } });
+    return () => controller.abort();
+  }, [calendarMonthKey]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setPanchangLoading(true);
+    setPanchang(null);
+    const params = new URLSearchParams({ date: selectedInputDate, loc: "madurai", lang: "en" });
+    fetch(`https://tamilcalendar.click/api/v1/panchangam?${params}`, { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error("Panchang request failed"); return response.json() as Promise<CalendarApiValue>; })
+      .then((data) => setPanchang(data))
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setPanchang(null); })
+      .finally(() => { if (!controller.signal.aborted) setPanchangLoading(false); });
+    return () => controller.abort();
+  }, [selectedInputDate]);
+  const panchangPayload = findCalendarValue(panchang ?? undefined, ["panchangam", "panchang", "data", "result"]) ?? panchang ?? undefined;
+  const goodTimes = calendarText(findCalendarValue(panchangPayload, ["nallaneram", "nallaneramday", "auspiciousperiods"]));
+  const gowriTimes = calendarText(findCalendarValue(panchangPayload, ["gowrineram", "gowrinallaneram", "gowri"]));
+  const rahuTime = calendarText(findCalendarValue(panchangPayload, ["rahukalam", "rahukaalam"]));
+  const yamagandamTime = calendarText(findCalendarValue(panchangPayload, ["yamagandam", "yamakandam"]));
+  const gulikaiTime = calendarText(findCalendarValue(panchangPayload, ["gulikai", "kuligai"]));
+  const tamilCalendar = calendarRecord(findCalendarValue(panchangPayload, ["tamil"]));
+  const tamilMonths: Record<string, string> = { chithirai: "சித்திரை", vaikasi: "வைகாசி", aani: "ஆனி", aadi: "ஆடி", aavani: "ஆவணி", purattasi: "புரட்டாசி", aippasi: "ஐப்பசி", karthigai: "கார்த்திகை", margazhi: "மார்கழி", thai: "தை", maasi: "மாசி", panguni: "பங்குனி" };
+  const tamilMonth = typeof tamilCalendar?.month === "string" ? tamilMonths[tamilCalendar.month.toLowerCase()] ?? tamilCalendar.month : "";
+  const tamilDate = tamilMonth && tamilCalendar?.date != null ? `${tamilMonth} ${tamilCalendar.date}` : "";
+  const inauspiciousTimes = [...rahuTime.map((time) => `Rahu Kalam: ${time}`), ...yamagandamTime.map((time) => `Yamagandam: ${time}`), ...gulikaiTime.map((time) => `Gulikai: ${time}`)];
+  const tithi = calendarText(findCalendarValue(panchangPayload, ["tithi"]));
+  const nakshatra = calendarText(findCalendarValue(panchangPayload, ["nakshatra", "natchathiram"]));
+  const festivals = calendarText(findCalendarValue(panchangPayload, ["festivals", "festival"]));
+  const inquire = () => {
+    const params = new URLSearchParams({ enquiryDate: selectedInputDate, hall });
+    window.location.href = `/?${params.toString()}#quick-enquiry`;
+  };
+  return <section id="calendar" className="scroll-mt-24 bg-[#f7f5ec] py-16 md:py-24">
+    <div className="section-shell"><SectionTitle>Availability Calendar</SectionTitle><p className="mt-3 max-w-2xl text-muted-foreground">Choose a date to view its details and start an enquiry.</p>
+      <div className="mt-8 grid min-w-0 gap-5 lg:grid-cols-[minmax(260px,.8fr)_minmax(0,1.2fr)] lg:gap-8">
+        <aside className="order-2 min-w-0 border border-primary/10 bg-white p-4 shadow-sm sm:p-5 md:p-6 lg:order-1">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">◉ {isToday ? "இன்று · Today" : "Selected date"}</p>
+          <h3 className="display-heading mt-1.5 text-2xl leading-[1.05] text-primary">{selectedDate.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })},<br/>{selectedDate.getFullYear()}</h3>
+          {selectedBooking && <div ref={bookingDetailRef} className="mt-3 border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-950"><p className="font-bold">Booking details · Booked</p><p className="mt-1">Date: {selectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} / {selectedBooking.tamilMonth}</p><p>Event: <strong>{selectedBooking.function}</strong></p><p>Booked under: {selectedBooking.customerName}</p><p>Location: {selectedBooking.location}</p></div>}
+          <div className="mt-3 flex items-start gap-3 border-b border-primary/10 pb-3"><span className="display-heading text-4xl leading-none text-primary">{selectedDate.getDate()}</span><div className="border-l border-gold pl-3 text-xs text-muted-foreground"><p className="font-medium text-primary">{tamilDate || (panchangLoading ? "தமிழ் தேதி ஏற்றப்படுகிறது…" : "தமிழ் தேதி கிடைக்கவில்லை")}</p><p className="mt-1">{selectedDate.toLocaleDateString("ta-IN", { weekday: "long" })}</p>{nakshatra[0] && <p className="mt-1">நட்சத்திரம்: {nakshatra[0]}</p>}{tithi[0] && <p className="mt-1">திதி: {tithi[0]}</p>}</div></div>
+          <div aria-label="Daily auspicious and inauspicious times" className="mt-2 max-h-36 space-y-2 overflow-y-auto overscroll-contain pr-1 touch-pan-y sm:max-h-40">
+            {([["NALLA NERAM", goodTimes, "bg-[#f5f3eb] text-primary", "☀"], ["GOWRI NALLA NERAM", gowriTimes, "bg-emerald-50 text-emerald-800", "✦"], ["INAUSPICIOUS TIMES", inauspiciousTimes, "bg-red-50 text-red-700", "⊘"]] as const).map(([label, times, style, icon]) => <div key={label} className={`grid min-w-0 grid-cols-1 gap-x-2 gap-y-1 px-3 py-2 text-[11px] min-[400px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] ${style}`}><span className="flex items-center gap-2 font-semibold"><span className="text-base" aria-hidden="true">{icon}</span>{label}</span><div className="min-w-0 text-left min-[400px]:text-right">{panchangLoading ? <span>Loading…</span> : times.length ? times.map((time, index) => <p key={`${time}-${index}`} className="break-words">{time}</p>) : <span className="text-muted-foreground">Unavailable</span>}</div></div>)}
+          </div>
+          <div className="mt-3 border-b border-primary/10 pb-2"><h4 className="text-[11px] font-semibold uppercase tracking-[.12em] text-primary">{isToday ? "Today’s Festivals" : "Festivals on this date"}</h4>{festivals.length ? <ul className="mt-1.5 space-y-1">{festivals.slice(0, 2).map((festival) => <li key={festival} className="text-xs text-foreground">✧ {festival}</li>)}</ul> : <p className="mt-1.5 text-xs text-muted-foreground">{panchangLoading ? "Loading…" : "No festival information available."}</p>}</div>
+          <div className="mt-2"><h4 className="text-[11px] font-semibold uppercase tracking-[.12em] text-primary">Upcoming Muhurtham Dates</h4>{muhurthamStatus === "loading" ? <p className="mt-1.5 text-xs text-muted-foreground">Loading dates…</p> : muhurthamStatus === "unavailable" ? <p className="mt-1.5 text-xs text-muted-foreground">Muhurtham dates are not available for {month.getFullYear()}.</p> : <ul className="mt-1.5 space-y-1">{upcomingMuhurtham.map((date) => <li key={date} className="flex gap-2 text-xs text-primary"><span className="text-[#8b7418]">★</span><span>{new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · Muhurtham</span></li>)}</ul>}</div>
+          <label className="mt-2 block text-xs font-medium">Choose hall<select value={hall} onChange={(event) => setHall(event.target.value as "Mini Hall" | "Max Hall")} className="mt-1 h-9 w-full border border-input bg-background px-3 text-sm"><option>Mini Hall</option><option>Max Hall</option></select></label>
+          <div className="mt-2 grid gap-1.5"><Button type="button" onClick={inquire} className="h-9 rounded-none text-xs">Enquire Now</Button>{/* <Button type="button" variant="outline" onClick={inquire} className="h-9 rounded-none text-xs">Book Now</Button> */}</div>
+        </aside>
+        <div className="order-1 min-w-0 border border-primary/10 bg-white p-4 shadow-sm sm:p-5 md:p-8 lg:order-2"><div className="flex items-center justify-between gap-3"><Button type="button" variant="outline" size="icon" aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft/></Button><h3 className="display-heading text-center text-xl text-primary sm:text-2xl">{month.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h3><Button type="button" variant="outline" size="icon" aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight/></Button></div>
+          <div className="mt-6 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day} className="py-2">{day}</span>)}</div>
+          <div className="grid grid-cols-7 gap-1">{cells.map((date, index) => { if (!date) return <span key={`empty-${index}`} aria-hidden="true" className="aspect-square min-h-10"/>; const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; const isMuhurtham = muhurthamDataMonth === calendarMonthKey && Boolean(muhurthamDates[dayKey]); const isBookedDate = bookings.some((booking) => booking.date === dayKey && booking.status === "booked"); const isSelected = date.toDateString() === selectedDate.toDateString(); return <button key={date.toISOString()} type="button" aria-label={`${date.toLocaleDateString("en-IN", { dateStyle: "full" })}${isBookedDate ? ", booked" : isMuhurtham ? ", Muhurtham" : ", available"}`} aria-pressed={isSelected} onClick={() => { setSelectedDate(date); window.requestAnimationFrame(() => (isBookedDate ? bookingDetailRef.current : calendarStatusRef.current)?.scrollIntoView({ behavior: "smooth", block: "nearest" })); }} style={isSelected ? { outline: "2px solid #000", outlineOffset: "-3px" } : undefined} className={`box-border aspect-square min-h-9 border-2 border-transparent rounded-sm text-xs font-semibold transition-colors sm:min-h-10 sm:text-sm ${isBookedDate ? "bg-red-700 text-white hover:bg-red-800" : isMuhurtham ? "bg-amber-400 text-primary hover:bg-amber-500" : "bg-green-600 text-white hover:bg-green-700"} ${isSelected ? "z-10" : ""}`}>{date.getDate()}</button>; })}</div>
+          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[10px] font-medium uppercase tracking-wide"><span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-amber-400"/>Muhurtham</span><span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-red-700"/>Booked</span><span className="flex items-center gap-1.5 text-green-800"><span className="size-2.5 rounded-full bg-green-600"/>Available</span></div>
+          <div ref={calendarStatusRef} aria-live="polite" className={`mt-4 flex min-h-11 items-center justify-center gap-2 px-4 py-2 text-xs font-semibold ${statusBarClass}`}><span className={`size-3 rounded-sm ${isBooked ? "bg-red-500" : selectedMuhurtham ? "bg-amber-500" : "bg-green-500"}`} aria-hidden="true"/><span>Selected Date: {selectedLabel} · {selectedStatus}</span></div>
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
 function HomePage() {
   const [lightbox,setLightbox]=useState<number|null>(null); const [success,setSuccess]=useState(false); const [bookingChoice,setBookingChoice]=useState<"mahal"|"mini"|"other">("mahal");
+  const [prefillDate] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("enquiryDate") ?? "");
+  const [prefillHall] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("hall") ?? "");
   const [testimonialRef,testimonialApi]=useEmblaCarousel({loop:true,align:"center",containScroll:false}); const [activeTestimonial,setActiveTestimonial]=useState(0);
   const today = new Date();
   const minEventDate = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -724,11 +929,13 @@ function HomePage() {
 
     <section className="bg-primary py-16 text-primary-foreground md:py-24"><div className="section-shell grid gap-14 lg:grid-cols-[.72fr_1.28fr] lg:gap-20"><div className="lg:sticky lg:top-32 lg:self-start"><SectionTitle light>Why We’re the Perfect Choice</SectionTitle><div className="mt-8 h-px w-24 bg-gold"/></div><div className="border-t border-gold/45">{benefits.map(([ReasonIcon,title,text],i)=><article key={title} tabIndex={0} className="reveal group grid gap-4 border-b border-gold/35 py-7 transition-transform duration-300 hover:translate-x-1 focus-visible:translate-x-1 sm:grid-cols-[48px_minmax(0,1fr)] sm:gap-6"><span className="flex size-12 shrink-0 items-center justify-center border border-primary-foreground/25 text-primary-foreground transition-colors group-hover:border-gold group-hover:text-gold group-focus-visible:border-gold group-focus-visible:text-gold"><ReasonIcon className="size-6" strokeWidth={1.8} aria-hidden="true"/></span><div className="min-w-0"><div className="flex items-baseline gap-4"><span className="stat-number text-xs text-gold">0{i+1}</span><h3 className="display-heading text-2xl text-primary-foreground md:text-3xl">{title}</h3></div><p className="mt-3 text-sm leading-6 text-primary-foreground/70">{text}</p></div></article>)}</div></div></section>
 
+    <AvailabilityCalendar/>
+
     {/* EVENT TYPES — page-turning photo book on a maroon hard cover; it turns a page by itself every 3 seconds (see AUTO_FLIP_MS) */}
     <section className="events-section overflow-hidden py-16 md:py-24" style={eventsBg?{backgroundImage:`url("${eventsBg}")`}:undefined}>
       <div className="section-shell"><SectionTitle>Event Types We Host</SectionTitle></div>
       <div className="mx-auto mt-10 max-w-[90rem] px-3 sm:px-6 md:mt-14">
-        <PhotoBook items={eventTypes.map((t,i)=>[eventImages[i],t,eventDescriptions[i]] as const)} label="Event types photo book"/>
+        <PhotoBook items={eventTypes.map((t,i)=>[eventImages[i],t,eventDescriptions[i]] as const)} cover={eventBookCover} label="Event types photo book"/>
       </div>
     </section>
 
@@ -750,8 +957,8 @@ function HomePage() {
         <label className="block text-sm font-medium">Name *<input required name="name" maxLength={100} placeholder="Your full name" className="mt-2 h-12 w-full border border-input bg-background px-4 placeholder:text-muted-foreground"/></label>
         <label className="block text-sm font-medium">Phone Number *<input required name="phone" type="tel" maxLength={20} pattern="[0-9+ ()-]{7,20}" placeholder="Your contact number" className="mt-2 h-12 w-full border border-input bg-background px-4 placeholder:text-muted-foreground"/></label>
         <label className="block text-sm font-medium">Event Type *<select required name="event" defaultValue="" className="mt-2 h-12 w-full border border-input bg-background px-4 text-foreground"><option value="" disabled>Select event type</option>{eventTypes.map(e=><option key={e}>{e}</option>)}</select></label>
-        <label className="block text-sm font-medium">Preferred Event Date<input name="date" type="date" min={minEventDate} className="mt-2 h-12 w-full border border-input bg-background px-4 text-foreground"/></label>
-        <fieldset><legend className="text-sm font-medium">Hall Selection *</legend><div className="mt-3 flex gap-7"><label className="flex items-center gap-2"><input required type="radio" name="hall" value="Max Hall" className="size-4 accent-primary"/>Max Hall</label><label className="flex items-center gap-2"><input type="radio" name="hall" value="Mini Hall" className="size-4 accent-primary"/>Mini Hall</label></div></fieldset>
+        <label className="block text-sm font-medium">Preferred Event Date<input name="date" type="date" min={minEventDate} defaultValue={prefillDate} className="mt-2 h-12 w-full border border-input bg-background px-4 text-foreground"/></label>
+        <fieldset><legend className="text-sm font-medium">Hall Selection *</legend><div className="mt-3 flex gap-7"><label className="flex items-center gap-2"><input required type="radio" name="hall" value="Max Hall" defaultChecked={prefillHall === "Max Hall"} className="size-4 accent-primary"/>Max Hall</label><label className="flex items-center gap-2"><input type="radio" name="hall" value="Mini Hall" defaultChecked={prefillHall !== "Max Hall"} className="size-4 accent-primary"/>Mini Hall</label></div></fieldset>
         <Button type="submit" aria-label="Submit enquiry through WhatsApp" className="h-12 w-full rounded-none">Submit Enquiry</Button>
       </div>}</form></div></section>
 

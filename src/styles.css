@@ -764,6 +764,59 @@
   .photo-book-stage.no-bg .pb-page-block { display: block; left: 4.3%; top: 2.6%; bottom: auto; width: 91.4%; height: 79.5%; transform: none; }
 }
 
+/* The MRD Mahal artwork is the opening cover: fill the complete book area and
+   fade it away to reveal the normal turning pages. */
+.pb-opening-cover {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+}
+.pb-opening-cover.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.photo-book-stage.is-opening::after,
+.photo-book-stage.is-opening .pb-stage-bg,
+.photo-book-stage.is-opening .pb-cover-base,
+.photo-book-stage.is-opening .pb-page-block,
+.photo-book-stage.is-opening .pb-ribbon,
+.photo-book-stage.is-opening .pb-book {
+  display: none;
+}
+.pb-opening-cover > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+}
+.pb-opening-hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pb-opening-hit:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: -5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-opening-cover { transition-duration: .01ms; }
+}
+@media (max-width: 639px) {
+  /* Keep the landscape MRD cover uncropped on phones; event spreads use the taller book ratio. */
+  .photo-book-stage.is-opening { aspect-ratio: 1536 / 783; }
+}
+.photo-book.is-opening .photo-book-controls { margin-top: 1rem; }
+
 @media (prefers-reduced-motion: reduce) {
   .photo-book,
   .pb-leaf,
